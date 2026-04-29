@@ -1,14 +1,36 @@
 import { useState } from 'react'
 import { Settings, Shield, Globe, Bell, Trash2, Download } from 'lucide-react'
 import { useWallet } from '../lib/wallet-store'
+import { supabase } from '../lib/supabase'
 import { Card, Button, Input, SectionHeader } from '../components/ui'
 import { toast } from 'sonner'
 
 export default function WalletSettings() {
   const { nodeAlias, blockHeight, addTestFunds, mineBlock } = useWallet()
-  const [alias,   setAlias]   = useState(nodeAlias)
-  const [pin,     setPin]     = useState('')
-  const [newPin,  setNewPin]  = useState('')
+  const [alias,  setAlias]  = useState(nodeAlias)
+  const [pin,    setPin]    = useState('')
+  const [newPin, setNewPin] = useState('')
+
+  const saveAlias = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    const { error } = await supabase
+      .from('Wallet')
+      .update({ node_alias: alias })
+      .eq('user_id', session.user.id)
+    if (error) toast.error('Failed to save')
+    else toast.success('Settings saved!')
+  }
+
+  const resetWallet = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    await supabase.from('Transaction').delete().eq('user_id', session.user.id)
+    await supabase.from('OfflineTransaction').delete().eq('user_id', session.user.id)
+    await supabase.from('Wallet').update({ balance: 0 }).eq('user_id', session.user.id)
+    toast.error('Wallet reset — all testnet data cleared')
+    setTimeout(() => window.location.reload(), 1500)
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -24,12 +46,12 @@ export default function WalletSettings() {
           <Input label="Node Alias" value={alias} onChange={e => setAlias(e.target.value)} />
           <div className="grid grid-cols-2 gap-3 text-xs font-mono">
             {[
-              ['Network',     'testnet'],
+              ['Network',        'testnet'],
               ['Implementation', 'LND v0.17.4'],
-              ['Pub Key',     '03a8f...d7c2'],
-              ['Block Height', blockHeight.toLocaleString()],
-              ['Peers',       '8'],
-              ['Uptime',      '99.8%'],
+              ['Pub Key',        '03a8f...d7c2'],
+              ['Block Height',   blockHeight.toLocaleString()],
+              ['Peers',          '8'],
+              ['Uptime',         '99.8%'],
             ].map(([k, v]) => (
               <div key={k} className="p-3 bg-secondary rounded-lg">
                 <p className="text-muted-foreground mb-1">{k}</p>
@@ -37,7 +59,7 @@ export default function WalletSettings() {
               </div>
             ))}
           </div>
-          <Button onClick={() => toast.success('Settings saved')} className="w-full">Save Changes</Button>
+          <Button onClick={saveAlias} className="w-full">Save Changes</Button>
         </div>
       </Card>
 
@@ -48,7 +70,7 @@ export default function WalletSettings() {
           <h3 className="font-semibold text-foreground">Security</h3>
         </div>
         <div className="space-y-3">
-          <Input label="Current PIN" type="password" placeholder="••••" value={pin} onChange={e => setPin(e.target.value)} />
+          <Input label="Current PIN" type="password" placeholder="••••" value={pin}    onChange={e => setPin(e.target.value)} />
           <Input label="New PIN"     type="password" placeholder="••••" value={newPin} onChange={e => setNewPin(e.target.value)} />
           <Button variant="outline" className="w-full" onClick={() => { setPin(''); setNewPin(''); toast.success('PIN updated') }}>
             Update PIN
@@ -89,16 +111,20 @@ export default function WalletSettings() {
           <h3 className="font-semibold text-foreground">Testnet Developer Tools</h3>
         </div>
         <div className="space-y-2">
-          <Button variant="outline" className="w-full justify-start" onClick={() => { addTestFunds(100000); toast.success('+100,000 sats from testnet faucet') }}>
+          <Button variant="outline" className="w-full justify-start"
+            onClick={() => { addTestFunds(100000); toast.success('+100,000 sats from testnet faucet') }}>
             ⛏ Add 100,000 test sats (faucet)
           </Button>
-          <Button variant="outline" className="w-full justify-start" onClick={() => { mineBlock(); toast.success('Block mined!') }}>
+          <Button variant="outline" className="w-full justify-start"
+            onClick={() => { mineBlock(); toast.success('Block mined!') }}>
             ⛓ Mine a testnet block
           </Button>
-          <Button variant="outline" className="w-full justify-start" onClick={() => toast.info('Opened: localhost:8080/api-docs')}>
+          <Button variant="outline" className="w-full justify-start"
+            onClick={() => toast.info('Opened: localhost:8080/api-docs')}>
             📄 View API Documentation
           </Button>
-          <Button variant="outline" className="w-full justify-start" onClick={() => toast.info('Opening LND terminal…')}>
+          <Button variant="outline" className="w-full justify-start"
+            onClick={() => toast.info('Opening LND terminal…')}>
             💻 LND CLI Terminal
           </Button>
         </div>
@@ -110,8 +136,10 @@ export default function WalletSettings() {
           <Trash2 className="w-4 h-4 text-red-400" />
           <h3 className="font-semibold text-red-400">Danger Zone</h3>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">These actions are irreversible on mainnet. On testnet, data resets are safe.</p>
-        <Button variant="danger" onClick={() => toast.error('Wallet reset — reconnect to testnet node')}>
+        <p className="text-xs text-muted-foreground mb-3">
+          These actions are irreversible on mainnet. On testnet, data resets are safe.
+        </p>
+        <Button variant="danger" onClick={resetWallet}>
           Reset Wallet Data
         </Button>
       </Card>

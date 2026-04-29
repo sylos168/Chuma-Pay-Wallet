@@ -1,39 +1,7 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { supabase } from './supabase'
 
 const WalletContext = createContext(null)
-
-const INITIAL_TRANSACTIONS = [
-  {
-    id: 'tx_001',
-    type: 'receive',
-    description: 'Invoice for 5000 sats',
-    amount: 5000,
-    status: 'pending',
-    date: new Date('2025-04-27T17:27:00'),
-    channel: 'lightning',
-  },
-  {
-    id: 'tx_002',
-    type: 'receive',
-    description: 'Invoice for 800 sats',
-    amount: 800,
-    status: 'pending',
-    date: new Date('2025-04-27T17:34:00'),
-    channel: 'lightning',
-  },
-]
-
-const INITIAL_OFFLINE_QUEUE = [
-  {
-    id: 'off_001',
-    description: 'Market stall payment',
-    amount: 1200,
-    recipient: 'MKT-LILONGWE-001',
-    status: 'queued',
-    method: 'sms',
-    date: new Date('2025-04-27T16:00:00'),
-  },
-]
 
 const INITIAL_RELAY_NODES = [
   { id: 'relay_001', name: 'Nkhotakota Node',  location: 'Lakeshore, Central', status: 'online',  txCount: 47, bleActive: true,  smsActive: true  },
@@ -42,43 +10,168 @@ const INITIAL_RELAY_NODES = [
 ]
 
 export function WalletProvider({ children }) {
-  const [balance, setBalance] = useState(0)           // sats
-  const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS)
-  const [offlineQueue, setOfflineQueue] = useState(INITIAL_OFFLINE_QUEUE)
-  const [relayNodes] = useState(INITIAL_RELAY_NODES)
-  const [channels] = useState([
+  const [balance, setBalance]           = useState(0)
+  const [transactions, setTransactions] = useState([])
+  const [offlineQueue, setOfflineQueue] = useState([])
+  const [relayNodes]                    = useState(INITIAL_RELAY_NODES)
+  const [channels]                      = useState([
     { id: 'ch_001', peer: 'ACINALA-NODE-001',   capacity: 200000, localBalance: 152000, status: 'active' },
     { id: 'ch_002', peer: 'BLANTYRE-HUB-007',   capacity: 100000, localBalance: 38300,  status: 'active' },
     { id: 'ch_003', peer: 'LILONGWE-GW-002',    capacity: 185000, localBalance: 13000,  status: 'active' },
   ])
   const [blockHeight, setBlockHeight] = useState(2509134)
-  const [nodeAlias] = useState('chuma-pay-testnet')
+  const [nodeAlias]                   = useState('chuma-pay-testnet')
+  const [userId, setUserId]           = useState(null)
 
-  const totalSent     = transactions.filter(t => t.type === 'send').reduce((s, t) => s + t.amount, 0)
-  const totalReceived = transactions.filter(t => t.type === 'receive').reduce((s, t) => s + t.amount, 0)
+  // ── Load user + data on mount ──────────────────────────────
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) return
+      const uid = session.user.id
+      setUserId(uid)
+      loadWallet(uid)
+      loadTransactions(uid)
+      loadOfflineQueue(uid)
+      subscribeToChanges(uid)
+    })
 
-  const addTransaction = useCallback((tx) => {
-    const newTx = { id: `tx_${Date.now()}`, date: new Date(), ...tx }
-    setTransactions(prev => [newTx, ...prev])
-    if (tx.type === 'receive') setBalance(b => b + tx.amount)
-    if (tx.type === 'send')    setBalance(b => Math.max(0, b - tx.amount))
-    return newTx
+    return () => {
+      supabase.channel('wallet-changes').unsubscribe()
+    }
   }, [])
 
-  const addToOfflineQueue = useCallback((item) => {
-    const newItem = { id: `off_${Date.now()}`, date: new Date(), status: 'queued', ...item }
-    setOfflineQueue(prev => [newItem, ...prev])
-    return newItem
-  }, [])
+  // ── Real-time subscriptions ────────────────────────────────
+  const subscribeToChanges = (uid) => {
+    supabase
+      .channel('wallet-changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'Transaction',
+        filter: `user_id=eq.${uid}`,
+      }, () => {
+        loadTransactions(uid)
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'Wallet',
+        filter: `user_id=eq.${uid}`,
+      }, (payload) => {
+        if (payload.new?.balance !== undefined) {
+          setBalance(payload.new.balance)
+        }
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'OfflineTransaction',
+        filter: `user_id=eq.${uid}`,
+      }, () => {
+        loadOfflineQueue(uid)
+      })
+      .subscribe()
+  }
 
-  const processOfflineItem = useCallback((id) => {
+  const loadWallet = async (uid) => {
+    const { data } = await supabase
+      .from('Wallet')
+      .select('*')
+      .eq('user_id', uid)
+      .single()
+
+    if (data) {
+      setBalance(data.balance)
+      setBlockHeight(data.block_height || 2509134)
+    } else {
+      await supabase.from('Wallet').insert({
+        user_id: uid,
+        balance: 0,
+        node_alias: 'chuma-pay-testnet',
+        block_height: 2509134,
+      })
+    }
+  }
+
+  const loadTransactions = async (uid) => {
+    const { data } = await supabase
+      .from('Transaction')
+      .select('*')
+      .eq('user_id', uid)
+      .order('date', { ascending: false })
+    if (data) setTransactions(data)
+  }
+
+  const loadOfflineQueue = async (uid) => {
+    const { data } = await supabase
+      .from('OfflineTransaction')
+      .select('*')
+      .eq('user_id', uid)
+      .order('date', { ascending: false })
+    if (data) setOfflineQueue(data)
+  }
+
+  const updateBalance = async (uid, newBalance) => {
+    await supabase
+      .from('Wallet')
+      .update({ balance: newBalance })
+      .eq('user_id', uid)
+  }
+
+  const addTransaction = useCallback(async (tx) => {
+    const uid = userId || (await supabase.auth.getSession()).data.session?.user.id
+    if (!uid) return
+
+    const newTx = {
+      id: `tx_${Date.now()}`,
+      user_id: uid,
+      date: new Date().toISOString(),
+      ...tx,
+    }
+
+    const { data } = await supabase.from('Transaction').insert(newTx).select().single()
+
+    if (data) {
+      setTransactions(prev => [data, ...prev])
+      setBalance(b => {
+        const newBalance = tx.type === 'receive'
+          ? b + tx.amount
+          : Math.max(0, b - tx.amount)
+        updateBalance(uid, newBalance)
+        return newBalance
+      })
+    }
+    return data
+  }, [userId])
+
+  const addToOfflineQueue = useCallback(async (item) => {
+    const uid = userId || (await supabase.auth.getSession()).data.session?.user.id
+    if (!uid) return
+
+    const newItem = {
+      id: `off_${Date.now()}`,
+      user_id: uid,
+      date: new Date().toISOString(),
+      status: 'queued',
+      ...item,
+    }
+
+    const { data } = await supabase.from('OfflineTransaction').insert(newItem).select().single()
+    if (data) setOfflineQueue(prev => [data, ...prev])
+    return data
+  }, [userId])
+
+  const processOfflineItem = useCallback(async (id) => {
     setOfflineQueue(prev =>
       prev.map(item => item.id === id ? { ...item, status: 'processing' } : item)
     )
-    setTimeout(() => {
+    await supabase.from('OfflineTransaction').update({ status: 'processing' }).eq('id', id)
+
+    setTimeout(async () => {
       setOfflineQueue(prev =>
         prev.map(item => item.id === id ? { ...item, status: 'confirmed' } : item)
       )
+      await supabase.from('OfflineTransaction').update({ status: 'confirmed' }).eq('id', id)
     }, 2000)
   }, [])
 
@@ -87,8 +180,17 @@ export function WalletProvider({ children }) {
   }, [])
 
   const addTestFunds = useCallback((amount = 100000) => {
-    addTransaction({ type: 'receive', description: 'Testnet faucet', amount, status: 'confirmed', channel: 'onchain' })
+    addTransaction({
+      type: 'receive',
+      description: 'Testnet faucet',
+      amount,
+      status: 'confirmed',
+      channel: 'onchain',
+    })
   }, [addTransaction])
+
+  const totalSent     = transactions.filter(t => t.type === 'send').reduce((s, t) => s + t.amount, 0)
+  const totalReceived = transactions.filter(t => t.type === 'receive').reduce((s, t) => s + t.amount, 0)
 
   return (
     <WalletContext.Provider value={{
