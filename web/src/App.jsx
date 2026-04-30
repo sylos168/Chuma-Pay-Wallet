@@ -13,28 +13,24 @@ import OfflineQueue     from './pages/OfflineQueue'
 import USSDSimulator    from './pages/USSDSimulator'
 import RelayNetwork     from './pages/RelayNetwork'
 import WalletSettings   from './pages/WalletSettings'
+import Profile          from './pages/Profile'
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [session, setSession] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [session, setSession]         = useState(null)
+  const [loading, setLoading]         = useState(true)
 
   useEffect(() => {
-    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setLoading(false)
     })
-
-    // Listen for login/logout changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
     })
-
     return () => subscription.unsubscribe()
   }, [])
 
-  // Still checking auth
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -43,7 +39,6 @@ export default function App() {
     )
   }
 
-  // Not logged in — show auth page
   if (!session) {
     return (
       <>
@@ -53,7 +48,6 @@ export default function App() {
     )
   }
 
-  // Logged in — show full app
   return (
     <WalletProvider>
       <div className="min-h-screen bg-background font-sans">
@@ -69,6 +63,7 @@ export default function App() {
               <Route path="/ussd"     element={<USSDSimulator />} />
               <Route path="/relay"    element={<RelayNetwork />} />
               <Route path="/settings" element={<WalletSettings />} />
+              <Route path="/profile"  element={<Profile />} />
             </Routes>
           </main>
         </div>
