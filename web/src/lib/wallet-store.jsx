@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { supabase } from './supabase'
 
 const WalletContext = createContext(null)
@@ -22,8 +22,8 @@ export function WalletProvider({ children }) {
   const [blockHeight, setBlockHeight] = useState(2509134)
   const [nodeAlias]                   = useState('chuma-pay-testnet')
   const [userId, setUserId]           = useState(null)
+  const channelRef                    = useRef(null)
 
-  // ── Load user + data on mount ──────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) return
@@ -36,22 +36,25 @@ export function WalletProvider({ children }) {
     })
 
     return () => {
-      supabase.channel('wallet-changes').unsubscribe()
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current)
+      }
     }
   }, [])
 
-  // ── Real-time subscriptions ────────────────────────────────
   const subscribeToChanges = (uid) => {
-    supabase
-      .channel('wallet-changes')
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current)
+    }
+
+    const channel = supabase
+      .channel(`wallet-changes-${uid}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'Transaction',
         filter: `user_id=eq.${uid}`,
-      }, () => {
-        loadTransactions(uid)
-      })
+      }, () => loadTransactions(uid))
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -67,10 +70,10 @@ export function WalletProvider({ children }) {
         schema: 'public',
         table: 'OfflineTransaction',
         filter: `user_id=eq.${uid}`,
-      }, () => {
-        loadOfflineQueue(uid)
-      })
+      }, () => loadOfflineQueue(uid))
       .subscribe()
+
+    channelRef.current = channel
   }
 
   const loadWallet = async (uid) => {
