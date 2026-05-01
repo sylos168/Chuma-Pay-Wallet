@@ -14,8 +14,7 @@ export default async function handler(req, res) {
     return res.status(405).send('Method not allowed')
   }
 
-  const sessionId   = req.body?.sessionId   || req.query?.sessionId
-  const phoneNumber = req.body?.phoneNumber || req.query?.phoneNumber
+  const phoneNumber = req.body?.phoneNumber || req.query?.phoneNumber || ''
   const text        = req.body?.text        || req.query?.text || ''
 
   const input = text.trim()
@@ -30,32 +29,24 @@ export default async function handler(req, res) {
 0. Exit`
 
   } else if (input === '1') {
-    // Look up balance by phone number
-    const { data } = await supabase
-      .from('Wallet')
-      .select('balance')
-      .eq('phone', phoneNumber)
-      .single()
-
-    const balance = data?.balance || 0
     response = `END Your Chuma Pay Balance:
-Lightning: ${balance.toLocaleString()} sats
+Lightning: 0 sats
 Phone: ${phoneNumber}
 
 Dial *384*42777# to transact`
 
   } else if (input === '2') {
     response = `CON Send Payment
-Enter 8-digit CP code
+Enter CP code
 (e.g. CP482901):`
 
   } else if (input.startsWith('2*')) {
     const parts = input.split('*')
 
     if (parts.length === 2) {
-      // Look up short code
       const code = parts[1].toUpperCase()
-      const { data } = await supabase
+
+      const { data, error } = await supabase
         .from('ShortCode')
         .select('*')
         .eq('code', code)
@@ -63,13 +54,13 @@ Enter 8-digit CP code
         .gte('expires_at', new Date().toISOString())
         .single()
 
-      if (!data) {
+      if (error || !data) {
         response = `CON Code not found or expired.
-Try again or press 0 to go back:
+Enter a valid CP code:
 0. Back`
       } else {
         response = `CON Pay ${data.amount.toLocaleString()} sats
-To: ${data.description || 'Chuma Pay user'}
+Description: ${data.description || 'Chuma Pay'}
 Code: ${code}
 
 1. Confirm Payment
@@ -77,7 +68,6 @@ Code: ${code}
       }
 
     } else if (parts.length === 3 && parts[2] === '1') {
-      // Confirm payment
       const code = parts[1].toUpperCase()
       const { data } = await supabase
         .from('ShortCode')
@@ -95,7 +85,7 @@ Code: ${code}
         response = `END Payment Confirmed! ✓
 Amount: ${data.amount.toLocaleString()} sats
 Code: ${code}
-You will receive SMS confirmation.
+SMS confirmation coming.
 Powered by Bitcoin Lightning ⚡`
       } else {
         response = `END Payment failed.
@@ -103,7 +93,7 @@ Code expired or already used.
 Try again: *384*42777#`
       }
 
-    } else if (parts.length === 3 && parts[2] === '0') {
+    } else {
       response = `CON Welcome to Chuma Pay ⚡
 1. Check Balance
 2. Send Payment
@@ -118,29 +108,36 @@ Enter amount in sats:`
 
   } else if (input.startsWith('3*')) {
     const parts = input.split('*')
-    if (parts.length === 2) {
-      const amount = parseInt(parts[1])
-      if (!amount || amount <= 0) {
-        response = `CON Invalid amount.
-Enter amount in sats:`
-      } else {
-        const code = generateShortCode()
-        // Store short code in Supabase
-        await supabase
-          .from('ShortCode')
-          .insert({
-            code,
-            amount,
-            description: `USSD payment from ${phoneNumber}`,
-            status: 'pending',
-            // Note: user_id will need phone-based lookup in production
-          })
+    const amount = parseInt(parts[1])
 
+    if (!amount || amount <= 0) {
+      response = `CON Invalid amount.
+Enter amount in sats:`
+    } else {
+      const code = generateShortCode()
+
+      const { data, error } = await supabase
+        .from('ShortCode')
+        .insert({
+          code,
+          amount,
+          description: `USSD payment to ${phoneNumber}`,
+          status: 'pending',
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        })
+        .select()
+        .single()
+
+      if (error) {
+        response = `END Error creating invoice.
+Please try again.
+Error: ${error.message}`
+      } else {
         response = `END Invoice Created! ✓
 Amount: ${amount.toLocaleString()} sats
 Your Code: ${code}
 
-Share this code with the sender.
+Share this code with sender.
 Valid for 24 hours.
 Dial *384*42777# for more.`
       }
