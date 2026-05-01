@@ -5,12 +5,16 @@ export default async function handler(req, res) {
 
   const { sessionId, serviceCode, phoneNumber, text } = req.body
 
+  // phoneNumber is automatically provided by Africa's Talking
+  const callerPhone = phoneNumber
+
   let response = ''
   const input = text.trim()
 
   if (input === '') {
     // Main menu
     response = `CON Welcome to Chuma Pay ⚡
+Hi ${callerPhone}!
 1. Check Balance
 2. Send Money
 3. Receive Money
@@ -18,25 +22,27 @@ export default async function handler(req, res) {
 0. Exit`
 
   } else if (input === '1') {
-    // Balance — in real app query Supabase here
     response = `END Your Chuma Pay Balance:
 Lightning: 0 sats
 Onchain: 0 sats
-    
-Dial *384*1# to transact`
+
+Dial *384*42777# to transact`
 
   } else if (input === '2') {
     response = `CON Send Money
-Enter recipient phone number:`
+Enter recipient phone number:
+(Your number: ${callerPhone})`
 
   } else if (input.startsWith('2*')) {
     const parts = input.split('*')
     if (parts.length === 2) {
-      response = `CON Send to ${parts[1]}
+      response = `CON Send to +${parts[1]}
 Enter amount in sats:`
     } else if (parts.length === 3) {
-      response = `END Payment of ${parts[2]} sats
-Queued for ${parts[1]}
+      response = `END Payment Queued!
+From: ${callerPhone}
+To: +${parts[1]}
+Amount: ${parts[2]} sats
 You will receive SMS confirmation.`
     }
 
@@ -46,9 +52,10 @@ Enter amount in sats:`
 
   } else if (input.startsWith('3*')) {
     const parts = input.split('*')
-    response = `END Invoice created!
+    response = `END Invoice Created!
 Amount: ${parts[1]} sats
-Share code: CP${Date.now().toString().slice(-6)}
+Your number: ${callerPhone}
+Code: CP${Date.now().toString().slice(-6)}
 Valid for 24 hours`
 
   } else if (input === '4') {
@@ -58,6 +65,19 @@ Valid for 24 hours`
 3. MWK 500 (TNM)
 4. MWK 1000 (TNM)
 0. Back`
+
+  } else if (input.startsWith('4*')) {
+    const parts = input.split('*')
+    const options = {
+      '1': 'MWK 500 Airtel',
+      '2': 'MWK 1000 Airtel', 
+      '3': 'MWK 500 TNM',
+      '4': 'MWK 1000 TNM'
+    }
+    response = `END Airtime Purchase!
+${options[parts[1]] || 'Invalid option'}
+Sent to: ${callerPhone}
+Payment deducted from your Chuma Pay balance.`
 
   } else if (input === '0') {
     response = `END Thank you for using Chuma Pay!
