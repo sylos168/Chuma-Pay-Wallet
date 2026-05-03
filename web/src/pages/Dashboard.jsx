@@ -3,33 +3,7 @@ import { ArrowUp, ArrowDown, QrCode, WifiOff, ArrowUpRight, ArrowDownLeft, Activ
 import { useWallet } from '../lib/wallet-store'
 import { formatSats, formatDate } from '../lib/utils'
 import { Card, SectionHeader, Badge } from '../components/ui'
-import { useState, useEffect } from 'react'
-
-function useBTCPrice() {
-  const [price, setPrice] = useState(null)
-  const [change, setChange] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const fetchPrice = async () => {
-      try {
-        const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd,mwk&include_24hr_change=true')
-        const data = await res.json()
-        setPrice({ usd: data.bitcoin.usd, mwk: data.bitcoin.mwk })
-        setChange(data.bitcoin.usd_24h_change)
-      } catch (e) {
-        setPrice(null)
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchPrice()
-    const interval = setInterval(fetchPrice, 60000) // refresh every minute
-    return () => clearInterval(interval)
-  }, [])
-
-  return { price, change, loading }
-}
+import { useBTCPrice } from '../hooks/useBTCPrice'
 
 export default function Dashboard() {
   const { balance, transactions, totalSent, totalReceived, offlineQueue } = useWallet()
@@ -38,15 +12,14 @@ export default function Dashboard() {
   const pendingOffline = offlineQueue.filter(i => i.status === 'queued').length
   const isPositive = change > 0
 
-  // Convert balance to USD and MWK
   const balanceUSD = price ? ((balance / 100_000_000) * price.usd).toFixed(2) : null
   const balanceMWK = price ? ((balance / 100_000_000) * price.mwk).toLocaleString('en-MW', { maximumFractionDigits: 0 }) : null
 
   const ACTION_BUTTONS = [
-    { to: '/transact?tab=send',    icon: ArrowUp,   label: 'Send',        color: 'bg-red-500/10 border-red-500/20 text-red-400'    },
+    { to: '/transact?tab=send',    icon: ArrowUp,   label: 'Send',        color: 'bg-red-500/10 border-red-500/20 text-red-400'       },
     { to: '/transact?tab=receive', icon: ArrowDown,  label: 'Receive',     color: 'bg-green-500/10 border-green-500/20 text-green-400' },
-    { to: '/transact?tab=receive', icon: QrCode,     label: 'Scan QR',     color: 'bg-blue-500/10 border-blue-500/20 text-blue-400'  },
-    { to: '/offline',              icon: WifiOff,    label: 'Offline Pay', color: 'bg-primary/10 border-primary/20 text-primary'    },
+    { to: '/transact?tab=receive', icon: QrCode,     label: 'Scan QR',     color: 'bg-blue-500/10 border-blue-500/20 text-blue-400'    },
+    { to: '/offline',              icon: WifiOff,    label: 'Offline Pay', color: 'bg-primary/10 border-primary/20 text-primary'       },
   ]
 
   return (
