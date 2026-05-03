@@ -1,20 +1,26 @@
 import { useState, useRef, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Zap, Copy, Check } from 'lucide-react'
+import { Zap, Copy, Check, Link } from 'lucide-react'
 import { useWallet } from '../lib/wallet-store'
 import { generateInvoiceId, drawQR } from '../lib/utils'
 import { Card, Button, Input, SectionHeader } from '../components/ui'
 import { toast } from 'sonner'
 
+const NETWORK_TABS = [
+  { id: 'lightning', label: '⚡ Lightning', desc: 'Instant · Near-zero fees' },
+  { id: 'onchain',   label: '₿ Onchain',   desc: 'Slower · Higher fees'     },
+]
+
 export default function Transact() {
   const [params] = useSearchParams()
-  const [tab, setTab] = useState(params.get('tab') || 'send')
+  const [tab, setTab]       = useState(params.get('tab') || 'send')
+  const [network, setNetwork] = useState('lightning')
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <SectionHeader title="Send & Receive" subtitle="Lightning fast Bitcoin payments" />
 
-      {/* Tabs */}
+      {/* Send/Receive Tabs */}
       <div className="flex gap-1 p-1 bg-secondary rounded-xl">
         {['send', 'receive'].map(t => (
           <button
@@ -28,53 +34,96 @@ export default function Transact() {
         ))}
       </div>
 
-      {tab === 'send'    && <SendPanel />}
-      {tab === 'receive' && <ReceivePanel />}
+      {/* Network Selection */}
+      <div className="grid grid-cols-2 gap-3">
+        {NETWORK_TABS.map(({ id, label, desc }) => (
+          <button
+            key={id}
+            onClick={() => setNetwork(id)}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              network === id
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-border bg-secondary/30 text-muted-foreground hover:border-primary/50'
+            }`}
+          >
+            <p className="text-sm font-semibold">{label}</p>
+            <p className="text-xs mt-0.5 opacity-70">{desc}</p>
+          </button>
+        ))}
+      </div>
+
+      {/* Panel */}
+      {tab === 'send'    && <SendPanel network={network} />}
+      {tab === 'receive' && <ReceivePanel network={network} />}
     </div>
   )
 }
 
 /* ── Send ─────────────────────────────────────────── */
-function SendPanel() {
+function SendPanel({ network }) {
   const { addTransaction, balance } = useWallet()
   const [invoice, setInvoice] = useState('')
-  const [amount, setAmount] = useState('')
+  const [address, setAddress] = useState('')
+  const [amount, setAmount]   = useState('')
   const [sending, setSending] = useState(false)
+
+  const isLightning = network === 'lightning'
 
   const handleSend = () => {
     const sats = parseInt(amount)
     if (!sats || sats <= 0) { toast.error('Enter a valid amount'); return }
     if (sats > balance)     { toast.error('Insufficient balance'); return }
 
+    if (isLightning && !invoice) { toast.error('Enter a Lightning invoice'); return }
+    if (!isLightning && !address) { toast.error('Enter a Bitcoin address'); return }
+
     setSending(true)
     setTimeout(() => {
       addTransaction({
         type: 'send',
-        description: invoice ? `Payment to ${invoice.slice(0, 16)}...` : 'Lightning payment',
+        description: isLightning
+          ? `Lightning payment to ${invoice.slice(0, 16)}...`
+          : `Onchain payment to ${address.slice(0, 16)}...`,
         amount: sats,
         status: 'confirmed',
-        channel: 'lightning',
+        channel: isLightning ? 'lightning' : 'onchain',
       })
       setAmount('')
       setInvoice('')
+      setAddress('')
       setSending(false)
-      toast.success(`Sent ${sats.toLocaleString()} sats ⚡`)
+      toast.success(`Sent ${sats.toLocaleString()} sats ${isLightning ? '⚡' : '₿'}`)
     }, 1200)
   }
 
   return (
     <Card className="p-6 space-y-4">
       <div className="flex items-center gap-2 mb-2">
-        <Zap className="w-4 h-4 text-primary" />
-        <span className="text-sm font-semibold text-foreground">Lightning Payment</span>
+        {isLightning
+          ? <Zap className="w-4 h-4 text-primary" />
+          : <Link className="w-4 h-4 text-orange-400" />
+        }
+        <span className="text-sm font-semibold text-foreground">
+          {isLightning ? 'Lightning Payment' : 'Onchain Payment'}
+        </span>
       </div>
 
-      <Input
-        label="Lightning Invoice"
-        placeholder="lntb…"
-        value={invoice}
-        onChange={e => setInvoice(e.target.value)}
-      />
+      {isLightning ? (
+        <Input
+          label="Lightning Invoice"
+          placeholder="lntb…"
+          value={invoice}
+          onChange={e => setInvoice(e.target.value)}
+        />
+      ) : (
+        <Input
+          label="Bitcoin Address"
+          placeholder="bc1q… or tb1q… (testnet)"
+          value={address}
+          onChange={e => setAddress(e.target.value)}
+        />
+      )}
+
       <Input
         label="Amount (sats)"
         type="number"
@@ -83,16 +132,18 @@ function SendPanel() {
         onChange={e => setAmount(e.target.value)}
       />
 
+      {!isLightning && (
+        <div className="p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20 text-xs text-yellow-400">
+          ⚠️ Onchain transactions require network confirmations and may take 10-60 minutes.
+        </div>
+      )}
+
       <div className="text-xs text-muted-foreground">
         Available: <span className="font-mono text-foreground">{balance.toLocaleString()} sats</span>
       </div>
 
-      <Button
-        className="w-full"
-        onClick={handleSend}
-        disabled={sending}
-      >
-        {sending ? 'Routing payment…' : '⚡ Pay Now'}
+      <Button className="w-full" onClick={handleSend} disabled={sending}>
+        {sending ? 'Broadcasting…' : isLightning ? '⚡ Pay Now' : '₿ Send Onchain'}
       </Button>
 
       {/* Quick amounts */}
@@ -112,7 +163,7 @@ function SendPanel() {
 }
 
 /* ── Receive ──────────────────────────────────────── */
-function ReceivePanel() {
+function ReceivePanel({ network }) {
   const { addTransaction } = useWallet()
   const [amount, setAmount]   = useState('')
   const [memo, setMemo]       = useState('')
@@ -120,24 +171,34 @@ function ReceivePanel() {
   const [copied, setCopied]   = useState(false)
   const qrRef = useRef(null)
 
+  const isLightning = network === 'lightning'
+
+  // Testnet onchain address (placeholder)
+  const TESTNET_ADDRESS = 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx'
+
   useEffect(() => {
     if (invoice && qrRef.current) {
+      const { drawQR } = require('../lib/utils')
       drawQR(qrRef.current, invoice, 160)
     }
   }, [invoice])
 
   const generate = () => {
     const sats = parseInt(amount) || 0
-    const inv   = generateInvoiceId()
+    const inv = isLightning ? generateInvoiceId() : TESTNET_ADDRESS
     setInvoice(inv)
-    addTransaction({
-      type: 'receive',
-      description: memo ? memo : `Invoice for ${sats} sats`,
-      amount: sats,
-      status: 'pending',
-      channel: 'lightning',
-    })
-    toast.info('Invoice created — waiting for payment')
+    if (isLightning) {
+      addTransaction({
+        type: 'receive',
+        description: memo ? memo : `Invoice for ${sats} sats`,
+        amount: sats,
+        status: 'pending',
+        channel: 'lightning',
+      })
+      toast.info('Lightning invoice created — waiting for payment')
+    } else {
+      toast.info('Share your Bitcoin address to receive onchain payment')
+    }
   }
 
   const copy = () => {
@@ -145,32 +206,48 @@ function ReceivePanel() {
     navigator.clipboard?.writeText(invoice)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
-    toast.success('Invoice copied!')
+    toast.success(isLightning ? 'Invoice copied!' : 'Address copied!')
   }
 
   return (
     <Card className="p-6 space-y-4">
       <div className="flex items-center gap-2 mb-2">
-        <Zap className="w-4 h-4 text-green-400" />
-        <span className="text-sm font-semibold text-foreground">Create Invoice</span>
+        {isLightning
+          ? <Zap className="w-4 h-4 text-green-400" />
+          : <Link className="w-4 h-4 text-orange-400" />
+        }
+        <span className="text-sm font-semibold text-foreground">
+          {isLightning ? 'Create Lightning Invoice' : 'Receive Onchain'}
+        </span>
       </div>
 
-      <Input
-        label="Amount (sats)"
-        type="number"
-        placeholder="e.g. 10000"
-        value={amount}
-        onChange={e => setAmount(e.target.value)}
-      />
-      <Input
-        label="Memo (optional)"
-        placeholder="What's this for?"
-        value={memo}
-        onChange={e => setMemo(e.target.value)}
-      />
+      {isLightning && (
+        <>
+          <Input
+            label="Amount (sats)"
+            type="number"
+            placeholder="e.g. 10000"
+            value={amount}
+            onChange={e => setAmount(e.target.value)}
+          />
+          <Input
+            label="Memo (optional)"
+            placeholder="What's this for?"
+            value={memo}
+            onChange={e => setMemo(e.target.value)}
+          />
+        </>
+      )}
+
+      {!isLightning && (
+        <div className="p-4 rounded-xl bg-orange-500/5 border border-orange-500/20">
+          <p className="text-xs text-orange-400 font-semibold mb-1">₿ Your Bitcoin Testnet Address</p>
+          <p className="text-xs font-mono text-muted-foreground break-all">{TESTNET_ADDRESS}</p>
+        </div>
+      )}
 
       <Button className="w-full" onClick={generate}>
-        Generate Invoice
+        {isLightning ? 'Generate Invoice' : 'Show QR Code'}
       </Button>
 
       {invoice && (
@@ -182,7 +259,7 @@ function ReceivePanel() {
             </div>
           </div>
 
-          {/* Invoice string */}
+          {/* Invoice/Address string */}
           <div className="bg-background border border-border rounded-lg p-3 flex items-start gap-3">
             <code className="text-[11px] text-muted-foreground break-all flex-1 font-mono leading-relaxed">
               {invoice}
@@ -192,10 +269,19 @@ function ReceivePanel() {
             </button>
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-yellow-400">
-            <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-            Waiting for payment…
-          </div>
+          {isLightning && (
+            <div className="flex items-center gap-2 text-xs text-yellow-400">
+              <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+              Waiting for payment…
+            </div>
+          )}
+
+          {!isLightning && (
+            <div className="flex items-center gap-2 text-xs text-orange-400">
+              <div className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
+              Waiting for onchain confirmation…
+            </div>
+          )}
         </div>
       )}
     </Card>
