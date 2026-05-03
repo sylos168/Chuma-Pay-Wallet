@@ -1,24 +1,92 @@
 import { Link } from 'react-router-dom'
-import { ArrowUp, ArrowDown, QrCode, WifiOff, ArrowUpRight, ArrowDownLeft, Activity, Zap, Clock, TrendingUp, Eye } from 'lucide-react'
+import { ArrowUp, ArrowDown, QrCode, WifiOff, ArrowUpRight, ArrowDownLeft, Activity, Zap, Clock, TrendingUp, Eye, Bitcoin } from 'lucide-react'
 import { useWallet } from '../lib/wallet-store'
 import { formatSats, formatDate } from '../lib/utils'
 import { Card, SectionHeader, Badge } from '../components/ui'
+import { useState, useEffect } from 'react'
+
+function useBTCPrice() {
+  const [price, setPrice] = useState(null)
+  const [change, setChange] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchPrice = async () => {
+      try {
+        const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd,mwk&include_24hr_change=true')
+        const data = await res.json()
+        setPrice({ usd: data.bitcoin.usd, mwk: data.bitcoin.mwk })
+        setChange(data.bitcoin.usd_24h_change)
+      } catch (e) {
+        setPrice(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchPrice()
+    const interval = setInterval(fetchPrice, 60000) // refresh every minute
+    return () => clearInterval(interval)
+  }, [])
+
+  return { price, change, loading }
+}
 
 export default function Dashboard() {
   const { balance, transactions, totalSent, totalReceived, offlineQueue } = useWallet()
+  const { price, change, loading } = useBTCPrice()
 
   const pendingOffline = offlineQueue.filter(i => i.status === 'queued').length
+  const isPositive = change > 0
+
+  // Convert balance to USD and MWK
+  const balanceUSD = price ? ((balance / 100_000_000) * price.usd).toFixed(2) : null
+  const balanceMWK = price ? ((balance / 100_000_000) * price.mwk).toLocaleString('en-MW', { maximumFractionDigits: 0 }) : null
 
   const ACTION_BUTTONS = [
-    { to: '/transact?tab=send',    icon: ArrowUp,   label: 'Send',       color: 'bg-red-500/10 border-red-500/20 text-red-400'    },
-    { to: '/transact?tab=receive', icon: ArrowDown,  label: 'Receive',    color: 'bg-green-500/10 border-green-500/20 text-green-400' },
-    { to: '/transact?tab=receive', icon: QrCode,     label: 'Scan QR',    color: 'bg-blue-500/10 border-blue-500/20 text-blue-400'  },
+    { to: '/transact?tab=send',    icon: ArrowUp,   label: 'Send',        color: 'bg-red-500/10 border-red-500/20 text-red-400'    },
+    { to: '/transact?tab=receive', icon: ArrowDown,  label: 'Receive',     color: 'bg-green-500/10 border-green-500/20 text-green-400' },
+    { to: '/transact?tab=receive', icon: QrCode,     label: 'Scan QR',     color: 'bg-blue-500/10 border-blue-500/20 text-blue-400'  },
     { to: '/offline',              icon: WifiOff,    label: 'Offline Pay', color: 'bg-primary/10 border-primary/20 text-primary'    },
   ]
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <SectionHeader title="Dashboard" subtitle="Your Bitcoin Lightning wallet overview" />
+
+      {/* BTC Price Banner */}
+      <Card className="p-4 bg-gradient-to-r from-orange-500/10 via-card to-card border-orange-500/20">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-orange-500/20 flex items-center justify-center">
+              <Bitcoin className="w-5 h-5 text-orange-400" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Bitcoin Price</p>
+              {loading ? (
+                <p className="text-sm font-mono text-foreground animate-pulse">Loading…</p>
+              ) : price ? (
+                <p className="text-lg font-bold font-mono text-foreground">
+                  ${price.usd.toLocaleString()} <span className="text-xs text-muted-foreground">USD</span>
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">Unavailable</p>
+              )}
+            </div>
+          </div>
+          {price && (
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">MWK Price</p>
+                <p className="text-sm font-mono font-semibold text-foreground">MK {price.mwk.toLocaleString()}</p>
+              </div>
+              <div className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold ${isPositive ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                <TrendingUp className={`w-3 h-3 ${!isPositive && 'rotate-180'}`} />
+                {Math.abs(change).toFixed(2)}% 24h
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
 
       {/* Balance Card */}
       <Card className="relative overflow-hidden p-6 lg:p-8 bg-gradient-to-br from-primary/20 via-card to-card border-primary/10">
@@ -41,6 +109,13 @@ export default function Dashboard() {
               ₿ {(balance / 100_000_000).toFixed(8)}
             </h2>
             <p className="text-lg font-mono text-primary">{formatSats(balance)} sats</p>
+            {price && (
+              <div className="flex items-center gap-3 mt-2">
+                <p className="text-sm text-muted-foreground font-mono">≈ ${balanceUSD} USD</p>
+                <span className="text-muted-foreground">·</span>
+                <p className="text-sm text-muted-foreground font-mono">≈ MK {balanceMWK}</p>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2 mt-4 text-sm text-green-400">
             <TrendingUp className="w-4 h-4" />
@@ -152,4 +227,3 @@ function StatusBadge({ status }) {
   }
   return map[status] || <Badge variant="gray">{status}</Badge>
 }
-
