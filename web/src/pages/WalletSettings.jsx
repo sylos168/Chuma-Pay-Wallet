@@ -1,15 +1,56 @@
-import { useState } from 'react'
-import { Settings, Shield, Globe, Bell, Trash2, Download } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Settings, Shield, Globe, Bell, Trash2, Download, Eye, EyeOff, AlertTriangle } from 'lucide-react'
 import { useWallet } from '../lib/wallet-store'
 import { supabase } from '../lib/supabase'
 import { Card, Button, Input, SectionHeader } from '../components/ui'
 import { toast } from 'sonner'
+import * as bip39 from 'bip39'
 
 export default function WalletSettings() {
   const { nodeAlias, blockHeight, addTestFunds, mineBlock } = useWallet()
-  const [alias,  setAlias]  = useState(nodeAlias)
-  const [pin,    setPin]    = useState('')
-  const [newPin, setNewPin] = useState('')
+  const [alias,        setAlias]        = useState(nodeAlias)
+  const [pin,          setPin]          = useState('')
+  const [newPin,       setNewPin]       = useState('')
+  const [seedPhrase,   setSeedPhrase]   = useState(null)
+  const [showSeed,     setShowSeed]     = useState(false)
+  const [seedLoading,  setSeedLoading]  = useState(false)
+
+  // Load existing seed phrase
+  useEffect(() => {
+    loadSeed()
+  }, [])
+
+  const loadSeed = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    const { data } = await supabase
+      .from('Wallet')
+      .select('seed_phrase')
+      .eq('user_id', session.user.id)
+      .single()
+    if (data?.seed_phrase) setSeedPhrase(data.seed_phrase)
+  }
+
+  const generateSeed = async () => {
+    setSeedLoading(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+
+    const mnemonic = bip39.generateMnemonic()
+    const { error } = await supabase
+      .from('Wallet')
+      .update({ seed_phrase: mnemonic })
+      .eq('user_id', session.user.id)
+
+    if (error) {
+      toast.error('Failed to generate seed phrase')
+    } else {
+      setSeedPhrase(mnemonic)
+      setShowSeed(true)
+      toast.success('Seed phrase generated — save it now!')
+    }
+    setSeedLoading(false)
+  }
 
   const saveAlias = async () => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -31,6 +72,8 @@ export default function WalletSettings() {
     toast.error('Wallet reset — all testnet data cleared')
     setTimeout(() => window.location.reload(), 1500)
   }
+
+  const words = seedPhrase ? seedPhrase.split(' ') : []
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -63,6 +106,92 @@ export default function WalletSettings() {
         </div>
       </Card>
 
+      {/* Seed Phrase — Self Custodial */}
+      <Card className="p-5 border-yellow-500/20">
+        <div className="flex items-center gap-2 mb-4">
+          <Shield className="w-4 h-4 text-yellow-400" />
+          <h3 className="font-semibold text-foreground">Seed Phrase</h3>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+            Self-Custodial
+          </span>
+        </div>
+
+        <div className="p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20 mb-4">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-yellow-400">
+              Your 12-word seed phrase is the only way to recover your wallet. 
+              Never share it with anyone. Write it down and store it safely offline.
+            </p>
+          </div>
+        </div>
+
+        {!seedPhrase ? (
+          <Button
+            className="w-full"
+            onClick={generateSeed}
+            disabled={seedLoading}
+          >
+            {seedLoading ? 'Generating…' : '🔑 Generate Seed Phrase'}
+          </Button>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">Your 12-word recovery phrase:</p>
+              <button
+                onClick={() => setShowSeed(v => !v)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {showSeed
+                  ? <><EyeOff className="w-3 h-3" /> Hide</>
+                  : <><Eye className="w-3 h-3" /> Reveal</>
+                }
+              </button>
+            </div>
+
+            {showSeed ? (
+              <div className="grid grid-cols-3 gap-2">
+                {words.map((word, i) => (
+                  <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-secondary border border-border">
+                    <span className="text-[10px] text-muted-foreground w-4">{i + 1}.</span>
+                    <span className="text-xs font-mono text-foreground">{word}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {words.map((_, i) => (
+                  <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-secondary border border-border">
+                    <span className="text-[10px] text-muted-foreground w-4">{i + 1}.</span>
+                    <span className="text-xs font-mono text-foreground">••••••</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  navigator.clipboard?.writeText(seedPhrase)
+                  toast.success('Seed phrase copied — store it safely!')
+                }}
+              >
+                <Download className="w-3 h-3 mr-1" /> Copy Phrase
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={generateSeed}
+              >
+                🔄 Regenerate
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
+
       {/* Security */}
       <Card className="p-5">
         <div className="flex items-center gap-2 mb-4">
@@ -75,13 +204,6 @@ export default function WalletSettings() {
           <Button variant="outline" className="w-full" onClick={() => { setPin(''); setNewPin(''); toast.success('PIN updated') }}>
             Update PIN
           </Button>
-          <div className="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-lg">
-            <p className="text-xs font-semibold text-yellow-400 mb-1">Backup Seed Phrase</p>
-            <p className="text-xs text-muted-foreground">Your 12-word recovery phrase is the only way to restore your wallet. Keep it safe and never share it.</p>
-            <Button variant="outline" size="sm" className="mt-2">
-              <Download className="w-3 h-3" /> Export Seed (encrypted)
-            </Button>
-          </div>
         </div>
       </Card>
 
