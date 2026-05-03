@@ -4,7 +4,7 @@ import { useWallet } from '../lib/wallet-store'
 import { supabase } from '../lib/supabase'
 import { Card, Button, Input, SectionHeader } from '../components/ui'
 import { toast } from 'sonner'
-import * as bip39 from 'bip39'
+import { generateMnemonic } from '../lib/seedphrase'
 
 export default function WalletSettings() {
   const { nodeAlias, blockHeight, addTestFunds, mineBlock } = useWallet()
@@ -36,7 +36,7 @@ export default function WalletSettings() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return
 
-    const mnemonic = bip39.generateMnemonic()
+    const mnemonic = generateMnemonic()
     const { error } = await supabase
       .from('Wallet')
       .update({ seed_phrase: mnemonic })
