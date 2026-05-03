@@ -13,7 +13,7 @@ const NETWORK_TABS = [
 
 export default function Transact() {
   const [params] = useSearchParams()
-  const [tab, setTab]       = useState(params.get('tab') || 'send')
+  const [tab, setTab]         = useState(params.get('tab') || 'send')
   const [network, setNetwork] = useState('lightning')
 
   return (
@@ -52,7 +52,6 @@ export default function Transact() {
         ))}
       </div>
 
-      {/* Panel */}
       {tab === 'send'    && <SendPanel network={network} />}
       {tab === 'receive' && <ReceivePanel network={network} />}
     </div>
@@ -62,20 +61,20 @@ export default function Transact() {
 /* ── Send ─────────────────────────────────────────── */
 function SendPanel({ network }) {
   const { addTransaction, balance } = useWallet()
-  const [invoice, setInvoice] = useState('')
-  const [address, setAddress] = useState('')
-  const [amount, setAmount]   = useState('')
-  const [sending, setSending] = useState(false)
+  const [invoice, setInvoice]   = useState('')
+  const [address, setAddress]   = useState('')
+  const [amount, setAmount]     = useState('')
+  const [sending, setSending]   = useState(false)
+  const [scanning, setScanning] = useState(false)
 
   const isLightning = network === 'lightning'
 
   const handleSend = () => {
     const sats = parseInt(amount)
-    if (!sats || sats <= 0) { toast.error('Enter a valid amount'); return }
-    if (sats > balance)     { toast.error('Insufficient balance'); return }
-
-    if (isLightning && !invoice) { toast.error('Enter a Lightning invoice'); return }
-    if (!isLightning && !address) { toast.error('Enter a Bitcoin address'); return }
+    if (!sats || sats <= 0)               { toast.error('Enter a valid amount'); return }
+    if (sats > balance)                   { toast.error('Insufficient balance'); return }
+    if (isLightning && !invoice)          { toast.error('Enter a Lightning invoice'); return }
+    if (!isLightning && !address)         { toast.error('Enter a Bitcoin address'); return }
 
     setSending(true)
     setTimeout(() => {
@@ -96,22 +95,50 @@ function SendPanel({ network }) {
     }, 1200)
   }
 
+  const handleScan = () => {
+    // On mobile this will use the camera
+    // On web we show a paste prompt
+    toast.info('Point camera at QR code or paste invoice below')
+    setScanning(true)
+    setTimeout(() => setScanning(false), 3000)
+  }
+
   return (
     <Card className="p-6 space-y-4">
-      <div className="flex items-center gap-2 mb-2">
-        {isLightning
-          ? <Zap className="w-4 h-4 text-primary" />
-          : <Link className="w-4 h-4 text-orange-400" />
-        }
-        <span className="text-sm font-semibold text-foreground">
-          {isLightning ? 'Lightning Payment' : 'Onchain Payment'}
-        </span>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          {isLightning
+            ? <Zap className="w-4 h-4 text-primary" />
+            : <Link className="w-4 h-4 text-orange-400" />
+          }
+          <span className="text-sm font-semibold text-foreground">
+            {isLightning ? 'Lightning Payment' : 'Onchain Payment'}
+          </span>
+        </div>
+        {/* Scan QR Button */}
+        <button
+          onClick={handleScan}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary border border-border text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/>
+            <rect x="7" y="7" width="10" height="10" rx="1"/>
+          </svg>
+          Scan QR
+        </button>
       </div>
+
+      {scanning && (
+        <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 text-center">
+          <div className="text-3xl mb-2">📷</div>
+          <p className="text-xs text-muted-foreground">Camera scanning… or paste invoice below</p>
+        </div>
+      )}
 
       {isLightning ? (
         <Input
           label="Lightning Invoice"
-          placeholder="lntb…"
+          placeholder="lntb… (paste or scan QR)"
           value={invoice}
           onChange={e => setInvoice(e.target.value)}
         />
@@ -146,7 +173,6 @@ function SendPanel({ network }) {
         {sending ? 'Broadcasting…' : isLightning ? '⚡ Pay Now' : '₿ Send Onchain'}
       </Button>
 
-      {/* Quick amounts */}
       <div className="flex gap-2 flex-wrap">
         {[1000, 5000, 10000, 50000].map(n => (
           <button
@@ -169,24 +195,24 @@ function ReceivePanel({ network }) {
   const [memo, setMemo]       = useState('')
   const [invoice, setInvoice] = useState(null)
   const [copied, setCopied]   = useState(false)
-  const qrRef = useRef(null)
+  const qrRef                 = useRef(null)
 
   const isLightning = network === 'lightning'
-
-  // Testnet onchain address (placeholder)
   const TESTNET_ADDRESS = 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx'
 
   useEffect(() => {
     if (invoice && qrRef.current) {
-      const { drawQR } = require('../lib/utils')
       drawQR(qrRef.current, invoice, 160)
     }
   }, [invoice])
 
   const generate = () => {
     const sats = parseInt(amount) || 0
+    if (isLightning && !sats) { toast.error('Enter an amount'); return }
+
     const inv = isLightning ? generateInvoiceId() : TESTNET_ADDRESS
     setInvoice(inv)
+
     if (isLightning) {
       addTransaction({
         type: 'receive',
@@ -221,7 +247,7 @@ function ReceivePanel({ network }) {
         </span>
       </div>
 
-      {isLightning && (
+      {isLightning ? (
         <>
           <Input
             label="Amount (sats)"
@@ -237,9 +263,7 @@ function ReceivePanel({ network }) {
             onChange={e => setMemo(e.target.value)}
           />
         </>
-      )}
-
-      {!isLightning && (
+      ) : (
         <div className="p-4 rounded-xl bg-orange-500/5 border border-orange-500/20">
           <p className="text-xs text-orange-400 font-semibold mb-1">₿ Your Bitcoin Testnet Address</p>
           <p className="text-xs font-mono text-muted-foreground break-all">{TESTNET_ADDRESS}</p>
@@ -252,14 +276,12 @@ function ReceivePanel({ network }) {
 
       {invoice && (
         <div className="space-y-4 pt-2 border-t border-border">
-          {/* QR */}
           <div className="flex justify-center">
             <div className="bg-white rounded-xl p-3">
               <canvas ref={qrRef} width={160} height={160} />
             </div>
           </div>
 
-          {/* Invoice/Address string */}
           <div className="bg-background border border-border rounded-lg p-3 flex items-start gap-3">
             <code className="text-[11px] text-muted-foreground break-all flex-1 font-mono leading-relaxed">
               {invoice}
@@ -269,19 +291,10 @@ function ReceivePanel({ network }) {
             </button>
           </div>
 
-          {isLightning && (
-            <div className="flex items-center gap-2 text-xs text-yellow-400">
-              <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-              Waiting for payment…
-            </div>
-          )}
-
-          {!isLightning && (
-            <div className="flex items-center gap-2 text-xs text-orange-400">
-              <div className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
-              Waiting for onchain confirmation…
-            </div>
-          )}
+          <div className={`flex items-center gap-2 text-xs ${isLightning ? 'text-yellow-400' : 'text-orange-400'}`}>
+            <div className={`w-2 h-2 rounded-full animate-pulse ${isLightning ? 'bg-yellow-400' : 'bg-orange-400'}`} />
+            {isLightning ? 'Waiting for Lightning payment…' : 'Waiting for onchain confirmation…'}
+          </div>
         </div>
       )}
     </Card>
