@@ -2,52 +2,45 @@ import { useState, useEffect } from 'react'
 import { Settings, Shield, Globe, Bell, Trash2, Download, Eye, EyeOff, AlertTriangle } from 'lucide-react'
 import { useWallet } from '../lib/wallet-store'
 import { supabase } from '../lib/supabase'
+import { secureSet, secureGet, secureRemove } from '../lib/secure-storage'
 import { Card, Button, Input, SectionHeader } from '../components/ui'
 import { toast } from 'sonner'
 import { generateMnemonic } from '../lib/seedphrase'
 
 export default function WalletSettings() {
   const { nodeAlias, blockHeight, addTestFunds, mineBlock } = useWallet()
-  const [alias,        setAlias]        = useState(nodeAlias)
-  const [pin,          setPin]          = useState('')
-  const [newPin,       setNewPin]       = useState('')
-  const [seedPhrase,   setSeedPhrase]   = useState(null)
-  const [showSeed,     setShowSeed]     = useState(false)
-  const [seedLoading,  setSeedLoading]  = useState(false)
+  const [alias,       setAlias]       = useState(nodeAlias)
+  const [pin,         setPin]         = useState('')
+  const [newPin,      setNewPin]      = useState('')
+  const [seedPhrase,  setSeedPhrase]  = useState(null)
+  const [showSeed,    setShowSeed]    = useState(false)
+  const [seedLoading, setSeedLoading] = useState(false)
 
-  // Load existing seed phrase
+  // Load seed phrase from device storage only
   useEffect(() => {
     loadSeed()
   }, [])
 
   const loadSeed = async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
-    const { data } = await supabase
-      .from('Wallet')
-      .select('seed_phrase')
-      .eq('user_id', session.user.id)
-      .single()
-    if (data?.seed_phrase) setSeedPhrase(data.seed_phrase)
+    const seed = await secureGet('seed_phrase')
+    if (seed) setSeedPhrase(seed)
   }
 
   const generateSeed = async () => {
     setSeedLoading(true)
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
-
-    const mnemonic = generateMnemonic()
-    const { error } = await supabase
-      .from('Wallet')
-      .update({ seed_phrase: mnemonic })
-      .eq('user_id', session.user.id)
-
-    if (error) {
-      toast.error('Failed to generate seed phrase')
-    } else {
-      setSeedPhrase(mnemonic)
-      setShowSeed(true)
-      toast.success('Seed phrase generated — save it now!')
+    try {
+      const mnemonic = generateMnemonic()
+      // Store ONLY on device — never sent to server
+      const saved = await secureSet('seed_phrase', mnemonic)
+      if (saved) {
+        setSeedPhrase(mnemonic)
+        setShowSeed(true)
+        toast.success('Seed phrase generated — write it down now!')
+      } else {
+        toast.error('Failed to save seed phrase')
+      }
+    } catch (e) {
+      toast.error('Error generating seed phrase')
     }
     setSeedLoading(false)
   }
@@ -69,6 +62,8 @@ export default function WalletSettings() {
     await supabase.from('Transaction').delete().eq('user_id', session.user.id)
     await supabase.from('OfflineTransaction').delete().eq('user_id', session.user.id)
     await supabase.from('Wallet').update({ balance: 0 }).eq('user_id', session.user.id)
+    await secureRemove('seed_phrase')
+    setSeedPhrase(null)
     toast.error('Wallet reset — all testnet data cleared')
     setTimeout(() => window.location.reload(), 1500)
   }
@@ -119,19 +114,20 @@ export default function WalletSettings() {
         <div className="p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20 mb-4">
           <div className="flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-yellow-400">
-              Your 12-word seed phrase is the only way to recover your wallet. 
-              Never share it with anyone. Write it down and store it safely offline.
-            </p>
+            <div>
+              <p className="text-xs text-yellow-400 font-semibold mb-1">
+                🔒 Stored on your device only — never sent to any server
+              </p>
+              <p className="text-xs text-yellow-400/70">
+                Write down your 12 words and store them safely offline.
+                If you lose them, your wallet cannot be recovered.
+              </p>
+            </div>
           </div>
         </div>
 
         {!seedPhrase ? (
-          <Button
-            className="w-full"
-            onClick={generateSeed}
-            disabled={seedLoading}
-          >
+          <Button className="w-full" onClick={generateSeed} disabled={seedLoading}>
             {seedLoading ? 'Generating…' : '🔑 Generate Seed Phrase'}
           </Button>
         ) : (
@@ -175,16 +171,12 @@ export default function WalletSettings() {
                 className="flex-1"
                 onClick={() => {
                   navigator.clipboard?.writeText(seedPhrase)
-                  toast.success('Seed phrase copied — store it safely!')
+                  toast.success('Seed phrase copied — store it safely offline!')
                 }}
               >
                 <Download className="w-3 h-3 mr-1" /> Copy Phrase
               </Button>
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={generateSeed}
-              >
+              <Button variant="outline" className="flex-1" onClick={generateSeed}>
                 🔄 Regenerate
               </Button>
             </div>
