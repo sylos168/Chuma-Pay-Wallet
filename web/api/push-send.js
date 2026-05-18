@@ -13,24 +13,34 @@ webpush.setVapidDetails(
 )
 
 export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+
+  if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).send('Method not allowed')
+
   const { user_id, title, body } = req.body
   const { data: subs } = await supabase
     .from('PushSubscription')
     .select('subscription')
     .eq('user_id', user_id)
+
   if (!subs || subs.length === 0) {
     return res.status(404).json({ error: 'No subscriptions found' })
   }
+
   const payload = JSON.stringify({
     title: title || 'Chuma Pay',
     body: body || 'You have a new notification',
     icon: '/icon-192.png',
   })
+
   const results = await Promise.allSettled(
     subs.map(({ subscription }) =>
       webpush.sendNotification(JSON.parse(subscription), payload)
     )
   )
+
   res.status(200).json({ sent: results.filter(r => r.status === 'fulfilled').length })
 }
