@@ -14,6 +14,7 @@ import USSDSimulator    from './pages/USSDSimulator'
 import RelayNetwork     from './pages/RelayNetwork'
 import WalletSettings   from './pages/WalletSettings'
 import Profile          from './pages/Profile'
+import BitcoinWallet    from './pages/BitcoinWallet'
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -64,6 +65,7 @@ export default function App() {
               <Route path="/relay"    element={<RelayNetwork />} />
               <Route path="/settings" element={<WalletSettings />} />
               <Route path="/profile"  element={<Profile />} />
+              <Route path="/bitcoin"  element={<BitcoinWallet />} />
             </Routes>
           </main>
         </div>
