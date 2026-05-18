@@ -213,3 +213,20 @@ export const useWallet = () => {
   if (!ctx) throw new Error('useWallet must be used inside WalletProvider')
   return ctx
 }
+
+// Send push notification helper
+async function sendPaymentNotification(uid, amount, description) {
+  try {
+    await fetch('https://chuma-pay-wallet.vercel.app/api/push-send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: uid,
+        title: 'Payment Received ⚡',
+        body: `+${amount.toLocaleString()} sats — ${description}`,
+      })
+    })
+  } catch (e) {
+    console.error('push notification error:', e)
+  }
+}
