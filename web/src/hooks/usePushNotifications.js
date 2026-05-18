@@ -59,7 +59,7 @@ export function usePushNotifications() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return false
 
-      await fetch('/api/push-subscribe', {
+      await fetch('https://chuma-pay-wallet.vercel.app/api/push-subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -89,7 +89,7 @@ export function usePushNotifications() {
 
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
-        await fetch('/api/push-subscribe', {
+        await fetch('https://chuma-pay-wallet.vercel.app/api/push-subscribe', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: session.user.id })
