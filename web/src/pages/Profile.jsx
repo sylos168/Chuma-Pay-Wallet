@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react'
-import { User, Mail, Lock, Shield } from 'lucide-react'
+import { User, Lock, Shield, Bell, BellOff } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { usePushNotifications } from '../hooks/usePushNotifications'
 import { Card, Button, Input, SectionHeader } from '../components/ui'
 import { toast } from 'sonner'
 
 export default function Profile() {
-  const [email, setEmail]       = useState('')
+  const [email, setEmail]             = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPass, setConfirmPass] = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [joinedAt, setJoinedAt] = useState('')
+  const [loading, setLoading]         = useState(false)
+  const [joinedAt, setJoinedAt]       = useState('')
+  const { supported, subscribed, loading: pushLoading, permission, subscribe, unsubscribe } = usePushNotifications()
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -25,7 +27,6 @@ export default function Profile() {
     if (!newPassword || !confirmPass) { toast.error('Fill in both password fields'); return }
     if (newPassword !== confirmPass)  { toast.error('Passwords do not match'); return }
     if (newPassword.length < 6)       { toast.error('Password must be at least 6 characters'); return }
-
     setLoading(true)
     const { error } = await supabase.auth.updateUser({ password: newPassword })
     if (error) toast.error(error.message)
@@ -35,6 +36,17 @@ export default function Profile() {
       setConfirmPass('')
     }
     setLoading(false)
+  }
+
+  const handlePushToggle = async () => {
+    if (subscribed) {
+      await unsubscribe()
+      toast.success('Push notifications disabled')
+    } else {
+      const success = await subscribe()
+      if (success) toast.success('Push notifications enabled! ✅')
+      else toast.error('Could not enable notifications — check browser permissions')
+    }
   }
 
   return (
@@ -69,6 +81,49 @@ export default function Profile() {
             </div>
           ))}
         </div>
+      </Card>
+
+      {/* Push Notifications */}
+      <Card className="p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Bell className="w-4 h-4 text-blue-400" />
+          <h3 className="font-semibold text-foreground">Push Notifications</h3>
+        </div>
+        {!supported ? (
+          <p className="text-sm text-muted-foreground">
+            Push notifications are not supported on this device/browser.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 bg-secondary rounded-xl">
+              <div>
+                <p className="text-sm font-medium text-foreground">Payment Notifications</p>
+                <p className="text-xs text-muted-foreground">
+                  Get notified when you receive payments
+                </p>
+              </div>
+              <button
+                onClick={handlePushToggle}
+                disabled={pushLoading}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  subscribed
+                    ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                    : 'bg-secondary border border-border text-muted-foreground'
+                }`}
+              >
+                {subscribed
+                  ? <><Bell className="w-3 h-3" /> On</>
+                  : <><BellOff className="w-3 h-3" /> Off</>
+                }
+              </button>
+            </div>
+            {permission === 'denied' && (
+              <p className="text-xs text-red-400">
+                ⚠️ Notifications blocked in browser settings. Please enable them manually.
+              </p>
+            )}
+          </div>
+        )}
       </Card>
 
       {/* Change Password */}
@@ -116,6 +171,10 @@ export default function Profile() {
           <div className="flex items-center justify-between p-3 bg-secondary rounded-lg">
             <span>RLS protection</span>
             <span className="text-green-400 font-medium">✓ Active</span>
+          </div>
+          <div className="flex items-center justify-between p-3 bg-secondary rounded-lg">
+            <span>Self-custodial</span>
+            <span className="text-green-400 font-medium">✓ Seed on device</span>
           </div>
         </div>
       </Card>
