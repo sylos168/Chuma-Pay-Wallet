@@ -1,10 +1,10 @@
-// Secure storage using localStorage
-// On Android via Capacitor, localStorage persists within the app
-
 export async function secureSet(key, value) {
   try {
-    localStorage.setItem(`chuma_${key}`, JSON.stringify(value))
-    return true
+    const serialized = JSON.stringify(value)
+    localStorage.setItem(`chuma_${key}`, serialized)
+    // Verify it was saved
+    const check = localStorage.getItem(`chuma_${key}`)
+    return check !== null
   } catch (e) {
     console.error('secureSet error:', e)
     return false

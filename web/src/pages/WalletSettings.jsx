@@ -37,7 +37,7 @@ export default function WalletSettings() {
         setShowSeed(true)
         toast.success('Seed phrase generated — write it down now!')
       } else {
-        toast.error('Failed to save seed phrase')
+        toast.error("Storage failed — try again")
       }
     } catch (e) {
       toast.error('Error generating seed phrase')
