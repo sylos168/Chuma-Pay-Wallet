@@ -144,6 +144,10 @@ export function WalletProvider({ children }) {
         return newBalance
       })
     }
+    // Send push notification for received payments
+    if (tx.type === 'receive' && data) {
+      sendPaymentNotification(uid, tx.amount, tx.description || 'Payment received')
+    }
     return data
   }, [userId])
 
